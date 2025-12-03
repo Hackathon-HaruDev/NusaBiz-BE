@@ -11,12 +11,11 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Discord Notification
-        uses: rtCamp/action-discord-notify@v2
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          DISCORD_USERNAME: "GitHub Actions"
-          DISCORD_MESSAGE: |
+      - name: Discord Webhook Notify
+        uses: tsickert/discord-webhook@v2
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
+          content: |
             **Push Notification**
             Repository: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
