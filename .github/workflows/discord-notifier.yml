@@ -19,9 +19,8 @@ jobs:
           embed-description: 'A new push has been made to the ${{ github.ref }} branch.'
           embed-color: '3066993'
           embed-footer: 'GitHub Actions Notification'
-          embed-timestamp: true
           embed-url: 'https://github.com/${{ github.repository }}/commit/${{ github.sha }}'
           embed-author-name: '${{ github.actor }}'
           embed-author-url: 'https://github.com/${{ github.actor }}'
           embed-author-icon: 'https://github.com/${{ github.actor }}.png'
-          
+
