@@ -21,6 +21,8 @@
   "homepage": "https://github.com/Hackathon-HaruDev/NusaBiz-BE#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
+    "@types/cors": "^2.8.19",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1"
   },

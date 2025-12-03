@@ -1,27 +1,50 @@
-import express, { Request, Response } from 'express';
-import dotenv from 'dotenv';
-import { createRepositories } from './api/supabase/client';
+/**
+ * Server Entry Point
+ * Initialize and start Express server
+ */
 
+import dotenv from 'dotenv';
+import { createApp } from './app';
+
+// Load environment variables
 dotenv.config();
 
-const app = express();
-const port = process.env.PORT || 3000;
-const repos = createRepositories();
+const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-app.get('/', (req: Request, res: Response) => {
-    res.send('Express + TypeScript Server');
+// Create Express app
+const app = createApp();
+
+// Start server
+app.listen(PORT, () => {
+    console.log('=================================');
+    console.log('🚀 NusaBiz API Server Started');
+    console.log('=================================');
+    console.log(`Environment: ${NODE_ENV}`);
+    console.log(`Port: ${PORT}`);
+    console.log(`Server URL: http://localhost:${PORT}`);
+    console.log(`Health Check: http://localhost:${PORT}/api/v1/health`);
+    console.log('=================================');
 });
 
-app.get('/test-supabase', async (req: Request, res: Response) => {
-    try {
-        const { data, error } = await repos.users.findAll(undefined, { limit: 1 });
-        if (error) throw error;
-        res.json({ message: 'Supabase connection successful', data });
-    } catch (error: any) {
-        res.status(500).json({ message: 'Supabase connection failed', error: error.message });
-    }
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    process.exit(0);
 });
 
-app.listen(port, () => {
-    console.log(`[server]: Server is running at http://localhost:${port}`);
+process.on('SIGINT', () => {
+    console.log('SIGINT received. Shutting down gracefully...');
+    process.exit(0);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
 });
