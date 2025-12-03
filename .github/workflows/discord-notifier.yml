@@ -12,14 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Discord Webhook Notify
-        uses: tsickert/discord-webhook@v2
+        uses: tsickert/discord-webhook@v7.0.0
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-          content: |
-            **Push Notification**
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Author: ${{ github.actor }}
-            Commit: ${{ github.event.head_commit.message }}
-            Commit SHA: ${{ github.sha }}
-            URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+          embed-title: 'New Push to ${{ github.ref }}'
+          embed-description: 'A new push has been made to the ${{ github.ref }} branch.'
+          embed-color: '3066993'
+          embed-footer: 'GitHub Actions Notification'
+          embed-timestamp: true
+          embed-url: 'https://github.com/${{ github.repository }}/commit/${{ github.sha }}'
+          embed-author-name: '${{ github.actor }}'
+          embed-author-url: 'https://github.com/${{ github.actor }}'
+          embed-author-icon: 'https://github.com/${{ github.actor }}.png'
+          
