@@ -14,13 +14,18 @@ jobs:
       - name: Discord Webhook Notify
         uses: tsickert/discord-webhook@v7.0.0
         with:
-          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-          embed-title: 'New Push to ${{ github.ref }}'
-          embed-description: 'A new push has been made to the ${{ github.ref }} branch.'
-          embed-color: '3066993'
-          embed-footer: 'GitHub Actions Notification'
-          embed-url: 'https://github.com/${{ github.repository }}/commit/${{ github.sha }}'
-          embed-author-name: '${{ github.actor }}'
-          embed-author-url: 'https://github.com/${{ github.actor }}'
-          embed-author-icon: 'https://github.com/${{ github.actor }}.png'
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-title: "New Commit to ${GITHUB_REF_NAME}"
+          embed-description: |
+            **Commit Message:** ${{ github.event.head_commit.message }}
+            **Author:** ${{ github.event.head_commit.author.name }} (<${{ github.event.head_commit.author.email }}>)
+            **Committer:** ${{ github.event.head_commit.committer.name }}
+            **Commit SHA:** [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          embed-url: "https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          embed-color: "3066993"
+          embed-footer-text: "GitHub Actions • ${{ github.repository }}"
+          embed-footer-icon-url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+          embed-author-name: "${{ github.actor }}"
+          embed-author-icon-url: "https://github.com/${{ github.actor }}.png"
+          embed-timestamp: "${{ github.event.head_commit.timestamp }}"
 
