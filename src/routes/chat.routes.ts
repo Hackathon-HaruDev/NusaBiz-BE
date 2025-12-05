@@ -22,4 +22,7 @@ router.get('/history', asyncHandler(chatController.getChatHistory));
 // DELETE /api/v1/chat/history
 router.delete('/history', asyncHandler(chatController.clearChatHistory));
 
+// DELETE /api/v1/chat/:chatId
+router.delete('/:chatId', asyncHandler(chatController.clearChatbyId));
+
 export default router;

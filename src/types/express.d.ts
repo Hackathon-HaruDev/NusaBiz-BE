@@ -3,8 +3,6 @@
  * Custom type definitions for Express Request
  */
 
-import { Request } from 'express';
-
 /**
  * Authenticated user information
  */
@@ -14,12 +12,8 @@ export interface AuthUser {
 }
 
 /**
- * Extended Express Request with authenticated user
+ * Extend Express Request interface globally
  */
-export interface AuthRequest extends Request {
-    user?: AuthUser;
-}
-
 declare global {
     namespace Express {
         interface Request {
@@ -27,3 +21,4 @@ declare global {
         }
     }
 }
+

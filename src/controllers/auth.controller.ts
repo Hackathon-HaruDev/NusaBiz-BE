@@ -4,80 +4,97 @@
  */
 
 import { Request, Response } from 'express';
-import { supabase } from '../api/supabase/client';
+import { initializeApp, supabase } from '../api/supabase/client';
 import { successResponse, errorResponse, ErrorCodes } from '../utils/response.util';
 import { isValidEmail, isValidPassword, sanitizeString } from '../utils/validation.util';
 import { AppError } from '../middlewares/error.middleware';
+import { CreateUserDTO } from '../models';
+
+const { repos, services } = initializeApp();
 
 /**
  * Register a new user
  * POST /api/v1/auth/register
  */
 export async function register(req: Request, res: Response): Promise<void> {
-    const { email, password, full_name, whatsapp_number } = req.body;
 
-    // Validate required fields
-    if (!email || !password) {
-        throw new AppError(
-            400,
-            ErrorCodes.VALIDATION_ERROR,
-            'Email and password are required'
-        );
-    }
+    try {
 
-    // Validate email format
-    if (!isValidEmail(email)) {
-        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid email format');
-    }
+        const { email, password, full_name, whatsapp_number } = req.body;
 
-    // Validate password strength
-    if (!isValidPassword(password)) {
-        throw new AppError(
-            400,
-            ErrorCodes.VALIDATION_ERROR,
-            'Password must be at least 8 characters with letters and numbers'
-        );
-    }
-
-    // Create user with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: sanitizeString(email),
-        password,
-        options: {
-            data: {
-                full_name: full_name ? sanitizeString(full_name) : null,
-                whatsapp_number: whatsapp_number ? sanitizeString(whatsapp_number) : null,
-            },
-        },
-    });
-
-    if (authError) {
-        if (authError.message.includes('already registered')) {
-            throw new AppError(409, ErrorCodes.DUPLICATE_ENTRY, 'Email already registered');
+        // Validate required fields
+        if (!email || !password) {
+            throw new AppError(
+                400,
+                ErrorCodes.VALIDATION_ERROR,
+                'Email and password are required'
+            );
         }
-        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, authError.message);
-    }
 
-    if (!authData.user || !authData.session) {
-        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to create user account');
-    }
+        // Validate email format
+        if (!isValidEmail(email)) {
+            throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid email format');
+        }
 
-    // Return user data and token
-    res.status(201).json(
-        successResponse(
-            {
-                user: {
-                    id: authData.user.id,
-                    email: authData.user.email,
-                    full_name: authData.user.user_metadata.full_name,
-                    whatsapp_number: authData.user.user_metadata.whatsapp_number,
-                    created_at: authData.user.created_at,
+        // Validate password strength
+        if (!isValidPassword(password)) {
+            throw new AppError(
+                400,
+                ErrorCodes.VALIDATION_ERROR,
+                'Password must be at least 8 characters with letters and numbers'
+            );
+        }
+
+        // Create user with Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email: sanitizeString(email),
+            password,
+            options: {
+                data: {
+                    full_name: full_name ? sanitizeString(full_name) : null,
+                    whatsapp_number: whatsapp_number ? sanitizeString(whatsapp_number) : null,
                 },
-                token: authData.session.access_token,
             },
-            'Registration successful'
-        )
-    );
+        });
+
+        if (authError) {
+            if (authError.message.includes('already registered')) {
+                throw new AppError(409, ErrorCodes.DUPLICATE_ENTRY, 'Email already registered');
+            }
+            throw new AppError(400, ErrorCodes.VALIDATION_ERROR, authError.message);
+        }
+
+        if (!authData.user) {
+            throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to create user account');
+        }
+
+        const userDTO: CreateUserDTO = { email, full_name, whatsapp_number };
+        const userId = authData.user.id;
+
+        const { data: userData, error: userError } = await services.user.createUser(userId, userDTO);
+
+        if (userError) {
+            throw new AppError(500, ErrorCodes.SERVER_ERROR, `Failed to create user profile: ${userError.message || JSON.stringify(userError)}`);
+        }
+
+        if (!userData) {
+            throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to create user profile: No data returned');
+        }
+
+        res.status(201).json(
+            successResponse(
+                {
+                    user: userData,
+                    token: authData.session?.access_token || null,
+                },
+                authData.session
+                    ? 'Registration successful'
+                    : 'Registration successful. Please check your email to verify your account.'
+            )
+        );
+    } catch (error) {
+        throw error;
+    }
 }
 
 /**
@@ -103,7 +120,11 @@ export async function login(req: Request, res: Response): Promise<void> {
     });
 
     if (error) {
-        throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'Invalid credentials');
+        throw new AppError(
+            401,
+            ErrorCodes.AUTHENTICATION_REQUIRED,
+            `Invalid credentials: ${error.message}`
+        );
     }
 
     if (!data.user || !data.session) {

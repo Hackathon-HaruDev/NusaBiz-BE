@@ -41,6 +41,7 @@ export async function getCurrentUser(req: Request, res: Response): Promise<void>
             full_name: authUser.user.user_metadata.full_name || dbUser?.full_name,
             whatsapp_number:
                 authUser.user.user_metadata.whatsapp_number || dbUser?.whatsapp_number,
+            image: dbUser?.image,
             created_at: authUser.user.created_at,
             updated_at: authUser.user.updated_at,
         })
@@ -57,35 +58,109 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
     }
 
     const { full_name, whatsapp_number } = req.body;
+    const avatarFile = req.file; // From multer middleware
 
-    // Update user metadata in Supabase Auth
-    const { data, error } = await supabase.auth.updateUser({
-        data: {
-            full_name: full_name ? sanitizeString(full_name) : undefined,
-            whatsapp_number: whatsapp_number ? sanitizeString(whatsapp_number) : undefined,
-        },
-    });
+    let newAvatarUrl: string | null = null;
+    let oldAvatarUrl: string | null = null;
 
-    if (error) {
-        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, error.message);
-    }
+    try {
+        // Get current user data to check for existing avatar
+        const { data: currentUser, error: getUserError } = await repos.users.findByEmail(req.user.email);
 
-    if (!data.user) {
-        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update profile');
-    }
+        if (getUserError || !currentUser) {
+            throw new AppError(404, ErrorCodes.NOT_FOUND, 'User not found');
+        }
 
-    res.status(200).json(
-        successResponse(
-            {
-                id: data.user.id,
-                email: data.user.email,
-                full_name: data.user.user_metadata.full_name,
-                whatsapp_number: data.user.user_metadata.whatsapp_number,
-                updated_at: data.user.updated_at,
+        oldAvatarUrl = currentUser.image;
+
+        // Handle avatar upload if file is provided
+        if (avatarFile) {
+            const { uploadAvatar, deleteAvatar } = await import('../utils/storage.util');
+
+            // Upload new avatar
+            const { url, error: uploadError } = await uploadAvatar(supabase, req.user.id, avatarFile);
+
+            if (uploadError || !url) {
+                throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to upload avatar');
+            }
+
+            newAvatarUrl = url;
+
+            // Delete old avatar if exists and not default
+            if (oldAvatarUrl) {
+                await deleteAvatar(supabase, oldAvatarUrl);
+                // Ignore delete errors - not critical
+            }
+        }
+
+        // Prepare update data
+        const updateData: any = {
+            data: {
+                full_name: full_name ? sanitizeString(full_name) : undefined,
+                whatsapp_number: whatsapp_number ? sanitizeString(whatsapp_number) : undefined,
             },
-            'Profile updated successfully'
-        )
-    );
+        };
+
+        // Update user metadata in Supabase Auth
+        const { data, error } = await supabase.auth.updateUser(updateData);
+
+        if (error) {
+            // Rollback: delete newly uploaded avatar if auth update fails
+            if (newAvatarUrl) {
+                const { deleteAvatar } = await import('../utils/storage.util');
+                await deleteAvatar(supabase, newAvatarUrl);
+            }
+            throw new AppError(400, ErrorCodes.VALIDATION_ERROR, error.message);
+        }
+
+        if (!data.user) {
+            throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update profile');
+        }
+
+        // Update database with new avatar URL if uploaded
+        if (newAvatarUrl) {
+            // Update using Supabase query with email filter since user.id is UUID string
+            const { error: dbError } = await supabase
+                .from('Users')
+                .update({
+                    image: newAvatarUrl,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('email', req.user.email)
+                .is('deleted_at', null);
+
+            if (dbError) {
+                // Rollback: delete newly uploaded avatar
+                const { deleteAvatar } = await import('../utils/storage.util');
+                await deleteAvatar(supabase, newAvatarUrl);
+                throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update avatar in database');
+            }
+        }
+
+        // Get updated user data
+        const { data: updatedUser } = await repos.users.findByEmail(req.user.email);
+
+        res.status(200).json(
+            successResponse(
+                {
+                    id: data.user.id,
+                    email: data.user.email,
+                    full_name: data.user.user_metadata.full_name || updatedUser?.full_name,
+                    whatsapp_number: data.user.user_metadata.whatsapp_number || updatedUser?.whatsapp_number,
+                    image: updatedUser?.image,
+                    updated_at: data.user.updated_at,
+                },
+                'Profile updated successfully'
+            )
+        );
+    } catch (error) {
+        // Ensure rollback happens on any error
+        if (newAvatarUrl && error instanceof AppError) {
+            const { deleteAvatar } = await import('../utils/storage.util');
+            await deleteAvatar(supabase, newAvatarUrl);
+        }
+        throw error;
+    }
 }
 
 /**
@@ -116,22 +191,25 @@ export async function changePassword(req: Request, res: Response): Promise<void>
         );
     }
 
-    // Verify current password by attempting to sign in
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: req.user.email,
-        password: currentPassword,
-    });
-
-    if (authError || !authData.user) {
-        throw new AppError(401, ErrorCodes.UNAUTHORIZED, 'Current password is incorrect');
-    }
-
     // Update password
     const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
     });
 
     if (updateError) {
+        const errorMessage = updateError.message;
+
+        // Jika error berkaitan dengan autentikasi (sesi lama, dll.)
+        if (errorMessage.includes('Invalid Grant') || errorMessage.includes('token')) {
+            // Kita mengasumsikan pengguna harus re-authenticate (memasukkan password lama di frontend)
+            throw new AppError(
+                403,
+                ErrorCodes.UNAUTHORIZED,
+                'Session is too old. Please re-authenticate (login again) to change your password.'
+            );
+        }
+
+        // Jika error validasi lainnya dari Supabase
         throw new AppError(400, ErrorCodes.VALIDATION_ERROR, updateError.message);
     }
 

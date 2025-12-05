@@ -8,7 +8,7 @@ import type { Transaction } from './transaction.model';
 
 export interface Business {
     id: number;
-    user_id: number;
+    user_id: string;
     business_name: string;
     category: string | null;
     location: string | null;

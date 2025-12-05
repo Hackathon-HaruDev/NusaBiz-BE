@@ -7,7 +7,7 @@ import type { Message } from './message.model';
 
 export interface Chat {
     id: number;
-    user_id: number;
+    user_id: string;
     created_at: string;
     updated_at: string;
     deleted_at: string | null;

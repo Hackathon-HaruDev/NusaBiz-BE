@@ -28,6 +28,8 @@ import { TransactionService } from './transaction.service';
 import { ProductService } from './product.service';
 import { BusinessService } from './business.service';
 import { AIService } from './ai.service';
+import { User } from '../models';
+import { UserService } from './user.service';
 
 /**
  * Service factory
@@ -35,6 +37,7 @@ import { AIService } from './ai.service';
  */
 export function createServices(repos: Repositories) {
     return {
+        user: new UserService(repos),
         transaction: new TransactionService(repos),
         product: new ProductService(repos),
         business: new BusinessService(repos),
@@ -46,6 +49,7 @@ export function createServices(repos: Repositories) {
  * Services interface
  */
 export interface Services {
+    user: UserService;
     transaction: TransactionService;
     product: ProductService;
     business: BusinessService;

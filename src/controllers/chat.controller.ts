@@ -20,7 +20,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
         throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'User not authenticated');
     }
 
-    const { message } = req.body;
+    const { message, chatId } = req.body;
 
     // Validate message
     if (!message || !isNonEmptyString(message)) {
@@ -34,7 +34,11 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     }
 
     // Process message with AI service
-    const { data: interaction, error } = await services.ai.processAIChatMessage(user.id, message);
+    const { data: interaction, error } = await services.ai.processAIChatMessage(
+        user.id, 
+        message, 
+        chatId
+    );
 
     if (error || !interaction) {
         throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to process chat message');
@@ -87,11 +91,20 @@ export async function clearChatHistory(req: Request, res: Response): Promise<voi
         throw new AppError(404, ErrorCodes.NOT_FOUND, 'User not found');
     }
 
+    const userIdString = user.id;
+
     // Get user's chat
-    const { data: chat } = await repos.chats.getOrCreateForUser(user.id);
+    const { data: chat } = await repos.chats.findLatestChat(userIdString); 
+    
     if (!chat) {
-        res.status(200).json(successResponse(null, 'No chat history to clear'));
+        res.status(200).json(successResponse(null, 'No active chat history to clear'));
         return;
+    }
+    
+    const { error: messageError } = await repos.messages.softDeleteByChatId(chat.id);
+
+    if (messageError) {
+        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to clear chat messages');
     }
 
     // Delete all messages
@@ -104,4 +117,41 @@ export async function clearChatHistory(req: Request, res: Response): Promise<voi
     }
 
     res.status(200).json(successResponse(null, 'Chat history cleared successfully'));
+}
+
+
+/**
+ * Clear chat history by chat ID
+ * DELETE /api/v1/chat/:chatid
+ */
+export async function clearChatbyId(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+        throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'User not authenticated');
+    }
+
+    const chatId = parseInt(req.params.chatId);
+
+    if (isNaN(chatId)) {
+        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid chat ID format');
+    }
+
+    const { data: chat, error: chatError } = await repos.chats.findByIdAndUserId(chatId, req.user.id);
+    
+    if (chatError || !chat) {
+        throw new AppError(404, ErrorCodes.NOT_FOUND, 'Chat not found or access denied');
+    }
+
+    const { error: messageError } = await repos.messages.softDeleteByChatId(chatId);
+    
+    if (messageError) {
+        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to clear chat messages');
+    }
+
+    const { error: chatDeleteError } = await repos.chats.softDelete(chatId);
+
+    if (chatDeleteError) {
+        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to soft delete chat record');
+    }
+
+    res.status(200).json(successResponse(null, `Chat ${chatId} history cleared successfully`));
 }

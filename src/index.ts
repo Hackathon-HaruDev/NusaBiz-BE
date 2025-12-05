@@ -1,3 +1,5 @@
+/// <reference path="./types/express.d.ts" />
+
 /**
  * Server Entry Point
  * Initialize and start Express server

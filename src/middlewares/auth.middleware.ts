@@ -1,3 +1,5 @@
+/// <reference path="../types/express.d.ts" />
+
 /**
  * Authentication Middleware
  * JWT verification using Supabase Auth

@@ -15,7 +15,7 @@ export class BusinessRepository extends BaseRepository<Business> {
     /**
      * Find all businesses for a specific user
      */
-    async findByUserId(userId: number): Promise<{ data: Business[] | null; error: any }> {
+    async findByUserId(userId: string): Promise<{ data: Business[] | null; error: any }> {
         return this.findAll({ user_id: userId });
     }
 

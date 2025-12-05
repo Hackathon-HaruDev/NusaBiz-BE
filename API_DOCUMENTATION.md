@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0  
 **Base URL:** `http://localhost:3000/api/v1`  
-**Last Updated:** December 3, 2024
+**Last Updated:** December 5, 2024
 
 ---
 
@@ -372,22 +372,42 @@ Authorization: Bearer {token}
 
 ### 6. Update User Profile
 
-Update informasi profil user.
+Update informasi profil user dan upload avatar (opsional).
 
 #### PUT /users/me
 
 **Headers:**
 ```
 Authorization: Bearer {token}
+Content-Type: multipart/form-data
 ```
 
-**Request Body:**
-```json
-{
-  "full_name": "John Smith",
-  "whatsapp_number": "+628987654321"
-}
+**Request Body (Multipart Form Data):**
+- `full_name` (string, optional) - Nama lengkap user
+- `whatsapp_number` (string, optional) - Nomor WhatsApp
+- `avatar` (file, optional) - File gambar untuk avatar (jpg, jpeg, png, max 2MB)
+
+**Example cURL:**
+```bash
+# Update profile dengan avatar
+curl -X PUT http://localhost:3000/api/v1/users/me \
+  -H "Authorization: Bearer {token}" \
+  -F "avatar=@/path/to/image.jpg" \
+  -F "full_name=John Smith" \
+  -F "whatsapp_number=+628987654321"
+
+# Update profile tanpa avatar (JSON biasa juga tetap bisa)
+curl -X PUT http://localhost:3000/api/v1/users/me \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{"full_name":"John Smith","whatsapp_number":"+628987654321"}'
 ```
+
+**Avatar Upload Logic:**
+- File akan di-upload ke Supabase Storage bucket `user-image`
+- Avatar lama akan otomatis dihapus (kecuali default avatar)
+- Jika upload gagal, perubahan akan di-rollback
+- Public URL avatar akan disimpan di database field `Users.image`
 
 **Response:** `200 OK`
 ```json
@@ -398,9 +418,45 @@ Authorization: Bearer {token}
     "email": "johndoe@example.com",
     "full_name": "John Smith",
     "whatsapp_number": "+628987654321",
-    "updated_at": "2024-12-03T14:20:00Z"
+    "image": "https://puxrvmtzptuukbisgbnn.supabase.co/storage/v1/object/public/user-image/user_550e8400_1701600000.jpg",
+    "updated_at": "2024-12-05T14:20:00Z"
   },
   "message": "Profile updated successfully"
+}
+```
+
+**Error Responses:**
+
+`400 Bad Request` - Invalid file type
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Only JPG, JPEG, and PNG files are allowed"
+  }
+}
+```
+
+`400 Bad Request` - File too large
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "File too large"
+  }
+}
+```
+
+`500 Server Error` - Upload failed
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVER_ERROR",
+    "message": "Failed to upload avatar"
+  }
 }
 ```
 
@@ -1562,7 +1618,7 @@ Authorization: Bearer {token}
 
 ### 32. Send Chat Message
 
-Mengirim pesan ke AI assistant dan mendapat respons.
+Mengirim pesan ke AI assistant dan mendapat respons. Mendukung sistem multi-chat dimana user dapat memiliki beberapa sesi percakapan.
 
 #### POST /chat/message
 
@@ -1574,9 +1630,18 @@ Authorization: Bearer {token}
 **Request Body:**
 ```json
 {
-  "message": "Bagaimana cara meningkatkan penjualan bisnis saya?"
+  "message": "Bagaimana cara meningkatkan penjualan bisnis saya?",
+  "chatId": 1
 }
 ```
+
+**Request Parameters:**
+- `message` (string, required) - Pesan yang akan dikirim ke AI
+- `chatId` (integer, optional) - ID chat untuk melanjutkan percakapan. Jika kosong/null, akan membuat chat baru
+
+**Logika:**
+- **Jika `chatId` kosong/null:** Service akan membuat chat baru dan menambahkan **konteks bisnis lengkap** (informasi bisnis, produk, transaksi) ke prompt pesan pertama. Ini memberikan AI pemahaman komprehensif tentang kondisi bisnis user.
+- **Jika `chatId` terisi:** Melanjutkan percakapan pada chat yang sudah ada dengan riwayat pesan sebelumnya. AI akan mempertahankan konteks percakapan.
 
 **Response:** `200 OK`
 ```json
@@ -1679,7 +1744,7 @@ Authorization: Bearer {token}
 
 ### 34. Clear Chat History
 
-Menghapus semua pesan dalam chat.
+Menghapus pesan dan record chat **terbaru/aktif** (soft delete) milik user.
 
 #### DELETE /chat/history
 
@@ -1687,6 +1752,9 @@ Menghapus semua pesan dalam chat.
 ```
 Authorization: Bearer {token}
 ```
+
+**Logika:**
+Endpoint ini akan mencari chat terbaru user (`findLatestChat`) dan menghapusnya beserta semua pesan di dalamnya. Jika user tidak memiliki chat aktif, akan mengembalikan pesan bahwa tidak ada chat history yang perlu dihapus.
 
 **Response:** `200 OK`
 ```json
@@ -1696,6 +1764,101 @@ Authorization: Bearer {token}
   "message": "Chat history cleared successfully"
 }
 ```
+
+**Response (Jika tidak ada chat):** `200 OK`
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "No active chat history to clear"
+}
+```
+
+---
+
+### 35. Clear Specific Chat History
+
+Menghapus pesan dan record chat spesifik (soft delete) berdasarkan ID chat.
+
+#### DELETE /chat/:chatId
+
+**Headers:**
+```
+Authorization: Bearer {token}
+```
+
+**URL Parameters:**
+- `chatId` (integer) - ID chat yang ingin dihapus
+
+**Example:** `DELETE /chat/1`
+
+**Validasi:**
+- Memverifikasi bahwa chat dengan ID tersebut ada
+- Memverifikasi bahwa chat milik user yang sedang login
+- Soft delete semua messages dalam chat
+- Soft delete chat record
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "Chat 1 history cleared successfully"
+}
+```
+
+**Error Responses:**
+
+`400 Bad Request` - Invalid chat ID format
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid chat ID format"
+  }
+}
+```
+
+`404 Not Found` - Chat not found atau user tidak memiliki akses
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Chat not found or access denied"
+  }
+}
+```
+
+---
+
+## Known Limitations & Future Endpoints
+
+### User Profile Picture Management
+
+**Status:** ✅ Implemented (December 5, 2024)  
+**Description:** API untuk upload dan manage avatar/profile picture user menggunakan Supabase Storage terintegrasi dengan endpoint **PUT /users/me**.
+
+**Storage Configuration:**
+- **Bucket:** `user-image` (Public bucket)
+- **Bucket URL:** `https://supabase.com/dashboard/project/puxrvmtzptuukbisgbnn/storage/files/buckets/user-image`
+- **Default Image:** `https://puxrvmtzptuukbisgbnn.supabase.co/storage/v1/object/public/user-image/user.png`
+- **Database Field:** `Users.image` (text, nullable, default: default image URL)
+
+**Endpoint:** `PUT /users/me` (dengan field `avatar` opsional)
+
+**Cara Penggunaan:**
+Lihat dokumentasi lengkap di [Endpoint 6: Update User Profile](#6-update-user-profile)
+
+**Implementation Details:**
+- Upload file via multipart/form-data dengan field name `avatar`
+- File validation: jpg, jpeg, png, max 2MB
+- Upload ke Supabase Storage bucket `user-image`
+- Filename format: `user_{userId}_{timestamp}.{ext}`
+- Update `Users.image` field di database dengan public URL
+- Hapus file lama dari storage jika ada (kecuali default image)
+- Automatic rollback jika terjadi error
 
 ---
 
@@ -1770,5 +1933,5 @@ Untuk pertanyaan atau issue, hubungi tim development NusaBiz.
 
 ---
 
-**Last Updated:** December 3, 2024  
+**Last Updated:** December 5, 2024  
 **API Version:** 1.0.0

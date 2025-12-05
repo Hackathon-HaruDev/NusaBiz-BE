@@ -23,18 +23,31 @@ export class AIService extends BaseService {
      * Returns complete interaction
      */
     async processAIChatMessage(
-        userId: number,
-        message: string
+        userId: string,
+        message: string,
+        existingChatId?: number
     ): Promise<{ data: ChatInteraction | null; error: any }> {
         try {
-            // Step 1: Get or create chat for user
-            const { data: chat, error: chatError } = await this.repos.chats.getOrCreateForUser(userId);
+            let chat: Chat;
+            let isNewChat = false;
+            let finalMessage = message;
 
-            if (chatError || !chat) {
-                return {
-                    data: null,
-                    error: chatError || new Error('Failed to create chat'),
-                };
+            if (existingChatId) {
+                // Skenario 1: Melanjutkan sesi chat yang sudah ada
+                const { data: foundChat } = await this.repos.chats.findByIdAndUserId(existingChatId, userId);
+                if (!foundChat) throw new Error('Chat not found or access denied.');
+                chat = foundChat;
+
+            } else {
+                // Skenario 2: Membuat chat baru (dipicu oleh 'New Chat')
+                const { data: newChat, error: chatError } = await this.repos.chats.createNewChat(userId);
+                if (chatError || !newChat) throw new Error('Failed to create new chat.');
+                chat = newChat;
+                isNewChat = true;
+
+                // ⭐️ LOGIKA KONTEKS HANYA UNTUK CHAT BARU ⭐️
+                const businessContext = await this.generateBusinessContext(userId);
+                finalMessage = `${businessContext}\n\n[PESAN PENGGUNA]\n${message}`;
             }
 
             // Step 2: Save user message
@@ -48,8 +61,8 @@ export class AIService extends BaseService {
                 };
             }
 
-            // Step 3: Generate AI response (simulated for MVP)
-            const aiResponse = await this.generateAIResponse(message);
+            // Step 3: Generate AI response using Kolosal AI
+            const aiResponse = await this.callKolosalAI(message);
 
             // Step 4: Save bot response
             const { data: botMessage, error: botMessageError } =
@@ -76,45 +89,66 @@ export class AIService extends BaseService {
     }
 
     /**
-     * Generate AI response (SIMULATED for MVP)
-     * TODO: Replace with real AI API (OpenAI, Gemini, etc.)
+     * Call Kolosal AI API for chat completion
+     * @param userMessage The message from the user
+     * @returns AI-generated response or error message
      */
-    private async generateAIResponse(userMessage: string): Promise<string> {
-        const messageLower = userMessage.toLowerCase();
+    private async callKolosalAI(userMessage: string): Promise<string> {
+        try {
+            const response = await fetch('https://api.kolosal.ai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.VITE_KOLOSAL_API}`
+                },
+                body: JSON.stringify({
+                    max_tokens: 1000,
+                    messages: [
+                        {
+                            content: userMessage,
+                            role: 'user'
+                        }
+                    ],
+                    model: 'meta-llama/llama-4-maverick-17b-128e-instruct'
+                })
+            });
 
-        // Simple rule-based responses for MVP
-        if (messageLower.includes('balance') || messageLower.includes('saldo')) {
-            return 'Untuk melihat saldo terkini, silakan cek Dashboard Anda. Saya dapat membantu Anda menganalisis transaksi dan memberikan insights.';
+            if (!response.ok) {
+                console.error(`Kolosal AI API error: ${response.status} ${response.statusText}`);
+                throw new Error(`Kolosal AI API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Extract AI response from choices array
+            if (data.choices && data.choices.length > 0) {
+                return data.choices[0].message.content;
+            }
+
+            throw new Error('No response from AI');
+
+        } catch (error) {
+            console.error('Kolosal AI Error:', error);
+            return 'Maaf, AI sedang mengalami gangguan teknis.';
         }
-
-        if (messageLower.includes('sales') || messageLower.includes('penjualan')) {
-            return 'Saya dapat membantu Anda menganalisis data penjualan. Periode mana yang ingin Anda tinjau?';
-        }
-
-        if (messageLower.includes('stock') || messageLower.includes('stok')) {
-            return 'Saya dapat membantu monitoring stok produk Anda. Apakah ada produk tertentu yang ingin Anda cek?';
-        }
-
-        if (messageLower.includes('help') || messageLower.includes('bantuan')) {
-            return 'Saya adalah AI Assistant untuk NusaBiz Saya bisa membantu Anda dengan:\n- Analisis penjualan dan keuangan\n- Monitoring stok produk\n- Rekomendasi bisnis\n- Menjawab pertanyaan tentang transaksi\n\nApa yang bisa saya bantu hari ini?';
-        }
-
-        // Default response
-        return 'Terima kasih atas pesan Anda. Saya adalah AI Assistant NusaBiz yang siap membantu Anda mengelola bisnis. Bisa tolong jelaskan lebih detail apa yang Anda butuhkan?';
     }
 
     /**
      * Get chat history for a user
      */
     async getChatHistory(
-        userId: number,
+        userId: string,
         messageLimit?: number
     ): Promise<{ data: { chat: Chat; messages: Message[] } | null; error: any }> {
         try {
-            const { data: chat, error: chatError } = await this.repos.chats.getOrCreateForUser(userId);
+            const { data: chat, error: chatError } = await this.repos.chats.findLatestChat(userId);
 
             if (chatError || !chat) {
-                return { data: null, error: chatError };
+                // Jika tidak ada chat, kembalikan data kosong, bukan error
+                return { 
+                    data: { chat: undefined as unknown as Chat, messages: [] }, 
+                    error: null 
+                };
             }
 
             const { data: messages, error: messagesError } = await this.repos.messages.findByChatId(
@@ -135,6 +169,47 @@ export class AIService extends BaseService {
             };
         } catch (error) {
             return { data: null, error };
+        }
+    }
+
+    private async generateBusinessContext(userId: string): Promise<string> {
+        try {
+            const contextParts: string[] = [];
+
+            // 1. Ambil Data Bisnis Utama
+            const { data: businesses } = await this.repos.businesses.findAll({ user_id: userId });
+            if (businesses?.length) {
+                contextParts.push("Data Bisnis Anda:");
+                businesses.forEach(b => {
+                    contextParts.push(`- Nama: ${b.business_name}, Kategori: ${b.category}, Saldo: ${b.current_balance}`);
+                });
+
+                // Asumsi: Kita hanya menggunakan bisnis pertama untuk detail lainnya
+                const primaryBusinessId = businesses[0].id; 
+                
+                // 2. Ambil Produk
+                const { data: products } = await this.repos.products.findAll({ business_id: primaryBusinessId }, { limit: 5 });
+                if (products?.length) {
+                    contextParts.push("\nProduk Terakhir/Populer (Max 5):");
+                    products.forEach(p => {
+                        contextParts.push(`- ${p.name}, Stok: ${p.current_stock}, Harga Jual: ${p.selling_price}`);
+                    });
+                }
+
+                // 3. Ambil Ringkasan Transaksi (Total Income/Expense)
+                const { data: totals } = await this.repos.transactions.getTotalsByType(primaryBusinessId);
+                if (totals) {
+                    contextParts.push("\nRingkasan Keuangan (Semua Waktu):");
+                    contextParts.push(`- Total Pendapatan: ${totals.income}, Total Pengeluaran: ${totals.expense}, Keuntungan Bersih: ${totals.income - totals.expense}`);
+                }
+            } else {
+                contextParts.push("Tidak ditemukan data bisnis yang terdaftar.");
+            }
+
+            return `[KONTEKS DATA BISNIS PENGGUNA]\n${contextParts.join('\n')}\n[/KONTEKS DATA BISNIS PENGGUNA]`;
+        } catch (error) {
+            console.error("Failed to generate AI context:", error);
+            return "[KONTEKS DATA BISNIS PENGGUNA] Gagal memuat data bisnis. [KONTEKS DATA BISNIS PENGGUNA]";
         }
     }
 }
