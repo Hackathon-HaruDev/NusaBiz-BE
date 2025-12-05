@@ -62,7 +62,7 @@ export class AIService extends BaseService {
             }
 
             // Step 3: Generate AI response using Kolosal AI
-            const aiResponse = await this.callKolosalAI(message);
+            const aiResponse = await this.callKolosalAI(finalMessage);
 
             // Step 4: Save bot response
             const { data: botMessage, error: botMessageError } =
@@ -145,9 +145,9 @@ export class AIService extends BaseService {
 
             if (chatError || !chat) {
                 // Jika tidak ada chat, kembalikan data kosong, bukan error
-                return { 
-                    data: { chat: undefined as unknown as Chat, messages: [] }, 
-                    error: null 
+                return {
+                    data: { chat: undefined as unknown as Chat, messages: [] },
+                    error: null
                 };
             }
 
@@ -185,8 +185,8 @@ export class AIService extends BaseService {
                 });
 
                 // Asumsi: Kita hanya menggunakan bisnis pertama untuk detail lainnya
-                const primaryBusinessId = businesses[0].id; 
-                
+                const primaryBusinessId = businesses[0].id;
+
                 // 2. Ambil Produk
                 const { data: products } = await this.repos.products.findAll({ business_id: primaryBusinessId }, { limit: 5 });
                 if (products?.length) {
