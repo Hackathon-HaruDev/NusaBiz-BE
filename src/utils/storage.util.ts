@@ -36,6 +36,7 @@ export async function uploadAvatar(
             });
 
         if (error) {
+            console.error("Detail Supabase Upload Failure:", error); // <-- Logging Detail Error
             return { url: null, error };
         }
 
@@ -45,6 +46,7 @@ export async function uploadAvatar(
 
         return { url: publicUrlData.publicUrl, error: null };
     } catch (error) {
+        console.error("General Storage Exception:", error);
         return { url: null, error };
     }
 }

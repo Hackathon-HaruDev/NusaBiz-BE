@@ -46,7 +46,7 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
     }
 
     const businessId = parseInt(req.params.businessId);
-    const { name, current_stock, purchase_price, selling_price } = req.body;
+    const { name, base_stock, current_stock, purchase_price, selling_price } = req.body;
     const productImageFile = req.file;
 
     if (isNaN(businessId)) {
@@ -79,6 +79,10 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
         );
     }
 
+    if (base_stock !== undefined && base_stock !== null && !isNonNegativeNumber(base_stock)) {
+        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Base stock must be a non-negative number');
+    }
+
     // Verify business ownership
     await verifyBusinessOwnership(businessId, req.user.email);
 
@@ -97,6 +101,7 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
     const { data: product, error } = await repos.products.create({
         business_id: businessId,
         name: sanitizeString(name),
+        base_stock: base_stock || null,
         current_stock: stock,
         purchase_price: purchase_price || null,
         selling_price: selling_price || null,
@@ -283,7 +288,7 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
 
     const businessId = parseInt(req.params.businessId);
     const productId = parseInt(req.params.productId);
-    const { name, purchase_price, selling_price } = req.body;
+    const { name, purchase_price, selling_price, base_stock} = req.body;
     const productImageFile = req.file;
 
     if (isNaN(businessId) || isNaN(productId)) {
@@ -316,6 +321,10 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
         );
     }
 
+    if (base_stock !== undefined && base_stock !== null && !isNonNegativeNumber(base_stock)) {
+        throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Base stock must be a non-negative number');
+    }
+
     let newImageUrl: string | null = null;
     const oldImageUrl: string | null = product.image;
 
@@ -341,6 +350,7 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
         
         const updateData: any = {
             name: name ? sanitizeString(name) : undefined,
+            base_stock: base_stock !== undefined ? base_stock : undefined,
             purchase_price: purchase_price !== undefined ? purchase_price : undefined,
             selling_price: selling_price !== undefined ? selling_price : undefined,
         };
