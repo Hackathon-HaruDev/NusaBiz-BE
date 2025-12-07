@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import { initializeApp } from '../api/supabase/client';
+import { initializeApp, supabase } from '../api/supabase/client';
 import { successResponse, ErrorCodes } from '../utils/response.util';
 import {
     isNonEmptyString,
@@ -13,6 +13,10 @@ import {
     sanitizeString,
     isPositiveNumber,
 } from '../utils/validation.util';
+import { 
+    uploadProductImage,
+    deleteProductImage,
+} from '../utils/storage.util';
 import { AppError } from '../middlewares/error.middleware';
 
 const { repos, services } = initializeApp();
@@ -43,6 +47,7 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
 
     const businessId = parseInt(req.params.businessId);
     const { name, current_stock, purchase_price, selling_price } = req.body;
+    const productImageFile = req.file;
 
     if (isNaN(businessId)) {
         throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid business ID');
@@ -83,6 +88,11 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
     if (stock === 0) stock_status = 'out';
     else if (stock < 10) stock_status = 'low';
 
+    let imageUrl: string | null = null;
+    let createdProduct: any = null;
+
+    try {
+
     // Create product
     const { data: product, error } = await repos.products.create({
         business_id: businessId,
@@ -91,13 +101,52 @@ export async function createProduct(req: Request, res: Response): Promise<void> 
         purchase_price: purchase_price || null,
         selling_price: selling_price || null,
         stock_status,
+        image: null,
     });
 
     if (error || !product) {
         throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to create product');
     }
 
-    res.status(201).json(successResponse(product, 'Product created successfully'));
+    createdProduct = product;
+
+    if (productImageFile) {
+            // Upload gambar menggunakan ID produk yang baru dibuat
+            const { url, error: uploadError } = await uploadProductImage(
+                supabase, 
+                createdProduct.id, 
+                productImageFile
+            );
+
+            if (uploadError || !url) {
+                // Jika upload gagal, hapus produk yang baru dibuat (rollback)
+                await repos.products.softDelete(createdProduct.id); 
+                throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to upload product image');
+            }
+
+            imageUrl = url;
+
+            // 3. Update produk dengan URL gambar
+            const { data: updatedProduct, error: updateError } = await repos.products.update(createdProduct.id, {
+                image: imageUrl,
+            });
+
+            if (updateError || !updatedProduct) {
+                 // Jika update DB gagal, hapus gambar yang baru diunggah (rollback) dan hapus produk
+                await deleteProductImage(supabase, imageUrl);
+                await repos.products.softDelete(createdProduct.id); 
+                throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update product image in database');
+            }
+            
+            createdProduct = updatedProduct;
+        }
+
+        res.status(201).json(successResponse(createdProduct, 'Product created successfully'));
+
+    } catch (error) {
+        // Jika ada kesalahan AppError, biarkan error middleware yang menangani
+        throw error; 
+    }
 }
 
 /**
@@ -235,6 +284,7 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
     const businessId = parseInt(req.params.businessId);
     const productId = parseInt(req.params.productId);
     const { name, purchase_price, selling_price } = req.body;
+    const productImageFile = req.file;
 
     if (isNaN(businessId) || isNaN(productId)) {
         throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid business or product ID');
@@ -266,18 +316,56 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
         );
     }
 
-    // Update product
-    const { data: updatedProduct, error } = await repos.products.update(productId, {
-        name: name ? sanitizeString(name) : undefined,
-        purchase_price: purchase_price !== undefined ? purchase_price : undefined,
-        selling_price: selling_price !== undefined ? selling_price : undefined,
-    });
+    let newImageUrl: string | null = null;
+    const oldImageUrl: string | null = product.image;
 
-    if (error || !updatedProduct) {
-        throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update product');
+    try {
+        if (productImageFile) {
+            // Upload gambar baru
+            const { url, error: uploadError } = await uploadProductImage(
+                supabase, 
+                productId, 
+                productImageFile
+            );
+
+            if (uploadError || !url) {
+                throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to upload product image');
+            }
+
+            newImageUrl = url;
+
+            if (oldImageUrl) {
+                await deleteProductImage(supabase, oldImageUrl);
+            }
+        }
+        
+        const updateData: any = {
+            name: name ? sanitizeString(name) : undefined,
+            purchase_price: purchase_price !== undefined ? purchase_price : undefined,
+            selling_price: selling_price !== undefined ? selling_price : undefined,
+        };
+
+        if (newImageUrl) {
+            updateData.image = newImageUrl;
+        }
+
+        const { data: updatedProduct, error } = await repos.products.update(productId, updateData);
+
+        if (error || !updatedProduct) {
+            if (newImageUrl) {
+                await deleteProductImage(supabase, newImageUrl);
+            }
+            throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update product');
+        }
+
+        res.status(200).json(successResponse(updatedProduct, 'Product updated successfully'));
+
+    } catch (error) {
+        if (newImageUrl && error instanceof AppError) {
+            await deleteProductImage(supabase, newImageUrl);
+        }
+        throw error;
     }
-
-    res.status(200).json(successResponse(updatedProduct, 'Product updated successfully'));
 }
 
 /**

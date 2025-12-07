@@ -13,6 +13,7 @@ export interface Product {
     purchase_price: number | null;
     selling_price: number | null;
     stock_status: StockStatus;
+    image: string | null;
     created_at: string;
     updated_at: string;
     deleted_at: string | null;
@@ -28,6 +29,7 @@ export interface CreateProductDTO {
     purchase_price?: number;
     selling_price?: number;
     stock_status?: StockStatus;
+    image?: string;
 }
 
 /**
@@ -39,4 +41,5 @@ export interface UpdateProductDTO {
     purchase_price?: number;
     selling_price?: number;
     stock_status?: StockStatus;
+    image?: string;
 }

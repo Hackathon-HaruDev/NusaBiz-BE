@@ -5,8 +5,10 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-const BUCKET_NAME = 'user-image';
-const DEFAULT_AVATAR_URL = 'https://puxrvmtzptuukbisgbnn.supabase.co/storage/v1/object/public/user-image/user.png';
+const USER_BUCKET_NAME = 'user-image';
+const PRODUCT_BUCKET_NAME = 'product-image';
+const DEFAULT_AVATAR_URL = 'https://puxrvmtzptuukbisgbnn.supabase.co/storage/v1/object/public/user-image/default.jpg';
+const DEFAULT_PRODUCT_IMAGE_URL = 'https://puxrvmtzptuukbisgbnn.supabase.co/storage/v1/object/public/product-image/product.png';
 
 /**
  * Upload avatar to Supabase Storage
@@ -21,15 +23,13 @@ export async function uploadAvatar(
     file: Express.Multer.File
 ): Promise<{ url: string | null; error: any }> {
     try {
-        // Generate unique filename
         const timestamp = Date.now();
         const extension = file.mimetype.split('/')[1];
         const fileName = `user_${userId}_${timestamp}.${extension}`;
         const filePath = fileName;
 
-        // Upload file to Supabase Storage
         const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
+            .from(USER_BUCKET_NAME)
             .upload(filePath, file.buffer, {
                 contentType: file.mimetype,
                 upsert: false,
@@ -39,9 +39,8 @@ export async function uploadAvatar(
             return { url: null, error };
         }
 
-        // Get public URL
         const { data: publicUrlData } = supabase.storage
-            .from(BUCKET_NAME)
+            .from(USER_BUCKET_NAME)
             .getPublicUrl(filePath);
 
         return { url: publicUrlData.publicUrl, error: null };
@@ -51,7 +50,7 @@ export async function uploadAvatar(
 }
 
 /**
- * Delete avatar from Supabase Storage
+ * Hapus avatar user dari Supabase Storage
  * @param supabase - Supabase client instance
  * @param imageUrl - Full public URL of the image
  * @returns Success status
@@ -61,19 +60,99 @@ export async function deleteAvatar(
     imageUrl: string
 ): Promise<{ success: boolean; error: any }> {
     try {
-        // Don't delete default avatar
         if (imageUrl === DEFAULT_AVATAR_URL) {
             return { success: true, error: null };
         }
 
-        // Extract file path from URL
-        // URL format: https://xxx.supabase.co/storage/v1/object/public/user-image/user_123_1234567890.jpg
-        const urlParts = imageUrl.split('/');
-        const fileName = urlParts[urlParts.length - 1];
+        const bucketPath = `/storage/v1/object/public/${USER_BUCKET_NAME}/`;
+        if (!imageUrl.includes(bucketPath)) {
+             // Jika URL tidak valid atau bukan dari bucket ini, abaikan penghapusan
+             return { success: true, error: null };
+        }
+        
+        // Ekstrak file path dari URL
+        const fileName = imageUrl.substring(imageUrl.indexOf(bucketPath) + bucketPath.length);
 
-        // Delete file from storage
         const { error } = await supabase.storage
-            .from(BUCKET_NAME)
+            .from(USER_BUCKET_NAME)
+            .remove([fileName]);
+
+        if (error) {
+            return { success: false, error };
+        }
+
+        return { success: true, error: null };
+    } catch (error) {
+        return { success: false, error };
+    }
+}
+
+/**
+ * Upload gambar produk ke Supabase Storage
+ * @param supabase - Supabase client instance
+ * @param productId - ID Produk (number)
+ * @param file - File buffer dari multer
+ * @returns Public URL of uploaded file
+ */
+export async function uploadProductImage(
+    supabase: SupabaseClient,
+    productId: number,
+    file: Express.Multer.File
+): Promise<{ url: string | null; error: any }> {
+    try {
+        const timestamp = Date.now();
+        const extension = file.mimetype.split('/')[1];
+        // Format nama file: product_[ID_PRODUK]_[TIMESTAMP].[EKSTENSI]
+        const fileName = `product_${productId}_${timestamp}.${extension}`;
+        const filePath = fileName;
+
+        const { data, error } = await supabase.storage
+            .from(PRODUCT_BUCKET_NAME)
+            .upload(filePath, file.buffer, {
+                contentType: file.mimetype,
+                upsert: false,
+            });
+
+        if (error) {
+            return { url: null, error };
+        }
+
+        const { data: publicUrlData } = supabase.storage
+            .from(PRODUCT_BUCKET_NAME)
+            .getPublicUrl(filePath);
+
+        return { url: publicUrlData.publicUrl, error: null };
+    } catch (error) {
+        return { url: null, error };
+    }
+}
+
+/**
+ * Hapus gambar produk dari Supabase Storage
+ * @param supabase - Supabase client instance
+ * @param imageUrl - Full public URL of the image
+ * @returns Success status
+ */
+export async function deleteProductImage(
+    supabase: SupabaseClient,
+    imageUrl: string
+): Promise<{ success: boolean; error: any }> {
+    try {
+        if (imageUrl === DEFAULT_PRODUCT_IMAGE_URL) {
+            return { success: true, error: null };
+        }
+
+        const bucketPath = `/storage/v1/object/public/${PRODUCT_BUCKET_NAME}/`;
+        if (!imageUrl.includes(bucketPath)) {
+             // Jika URL tidak valid atau bukan dari bucket ini, abaikan penghapusan
+             return { success: true, error: null };
+        }
+        
+        // Ekstrak file path dari URL
+        const fileName = imageUrl.substring(imageUrl.indexOf(bucketPath) + bucketPath.length);
+
+        const { error } = await supabase.storage
+            .from(PRODUCT_BUCKET_NAME)
             .remove([fileName]);
 
         if (error) {
@@ -91,4 +170,11 @@ export async function deleteAvatar(
  */
 export function getDefaultAvatarUrl(): string {
     return DEFAULT_AVATAR_URL;
+}
+
+/**
+ * Get default product image URL
+ */
+export function getDefaultProductImageUrl(): string {
+    return DEFAULT_PRODUCT_IMAGE_URL;
 }

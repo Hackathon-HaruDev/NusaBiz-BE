@@ -199,9 +199,7 @@ export async function changePassword(req: Request, res: Response): Promise<void>
     if (updateError) {
         const errorMessage = updateError.message;
 
-        // Jika error berkaitan dengan autentikasi (sesi lama, dll.)
         if (errorMessage.includes('Invalid Grant') || errorMessage.includes('token')) {
-            // Kita mengasumsikan pengguna harus re-authenticate (memasukkan password lama di frontend)
             throw new AppError(
                 403,
                 ErrorCodes.UNAUTHORIZED,
