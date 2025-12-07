@@ -589,3 +589,62 @@ export async function updateStockStatusBatch(
       )
     );
 }
+
+/**
+ * Adjust product stock (increment or decrement current_stock)
+ * PATCH /api/v1/businesses/:businessId/products/:productId/stock
+ */
+export async function adjustStock(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw new AppError(
+      401,
+      ErrorCodes.AUTHENTICATION_REQUIRED,
+      "User not authenticated"
+    );
+  }
+
+  const businessId = parseInt(req.params.businessId);
+  const productId = parseInt(req.params.productId);
+  const { quantityChange } = req.body;
+
+  if (isNaN(businessId) || isNaN(productId)) {
+    throw new AppError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      "Invalid business ID or product ID"
+    );
+  }
+
+  if (quantityChange === undefined || !isInteger(quantityChange)) {
+    throw new AppError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      "quantityChange must be an integer"
+    );
+  }
+
+  // Verify business ownership
+  await verifyBusinessOwnership(businessId, req.user.email);
+
+  // Verify product belongs to business
+  const { data: product } = await repos.products.findById(productId);
+  if (!product || product.business_id !== businessId) {
+    throw new AppError(404, ErrorCodes.NOT_FOUND, "Product not found");
+  }
+
+  // Use service to manage stock and status
+  const { data: updatedProduct, error } =
+    await services.product.manageStockAndStatus(productId, quantityChange);
+
+  if (error) {
+    throw new AppError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      error.message || "Failed to adjust stock"
+    );
+  }
+
+  res
+    .status(200)
+    .json(successResponse(updatedProduct, "Stock adjusted successfully"));
+}

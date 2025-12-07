@@ -32,6 +32,7 @@ router.put(
   upload.single("image"),
   asyncHandler(productController.updateProduct)
 );
+router.patch("/:productId/stock", asyncHandler(productController.adjustStock));
 router.delete("/:productId", asyncHandler(productController.deleteProduct));
 
 export default router;
