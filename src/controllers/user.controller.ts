@@ -21,19 +21,16 @@ export async function getCurrentUser(req: Request, res: Response): Promise<void>
         throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'User not authenticated');
     }
 
-    // Get user from Supabase Auth
     const { data: authUser, error: authError } = await supabase.auth.getUser();
 
     if (authError || !authUser.user) {
         throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'Failed to get user data');
     }
 
-    // Get additional user data from database
     const { data: dbUser, error: dbError } = await repos.users.findByEmail(
         authUser.user.email || ''
     );
 
-    // Return combined user data
     res.status(200).json(
         successResponse({
             id: authUser.user.id,
@@ -58,13 +55,12 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
     }
 
     const { full_name, whatsapp_number } = req.body;
-    const avatarFile = req.file; // From multer middleware
+    const avatarFile = req.file;
 
     let newAvatarUrl: string | null = null;
     let oldAvatarUrl: string | null = null;
 
     try {
-        // Get current user data to check for existing avatar
         const { data: currentUser, error: getUserError } = await repos.users.findByEmail(req.user.email);
 
         if (getUserError || !currentUser) {
@@ -73,11 +69,9 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
 
         oldAvatarUrl = currentUser.image;
 
-        // Handle avatar upload if file is provided
         if (avatarFile) {
             const { uploadAvatar, deleteAvatar } = await import('../utils/storage.util');
 
-            // Upload new avatar
             const { url, error: uploadError } = await uploadAvatar(supabase, req.user.id, avatarFile);
 
             if (uploadError || !url) {
@@ -87,14 +81,11 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
 
             newAvatarUrl = url;
 
-            // Delete old avatar if exists and not default
             if (oldAvatarUrl) {
                 await deleteAvatar(supabase, oldAvatarUrl);
-                // Ignore delete errors - not critical
             }
         }
 
-        // Prepare update data
         const updateData: any = {
             data: {
                 full_name: full_name ? sanitizeString(full_name) : undefined,
@@ -102,11 +93,9 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
             },
         };
 
-        // Update user metadata in Supabase Auth
         const { data, error } = await supabase.auth.updateUser(updateData);
 
         if (error) {
-            // Rollback: delete newly uploaded avatar if auth update fails
             if (newAvatarUrl) {
                 const { deleteAvatar } = await import('../utils/storage.util');
                 await deleteAvatar(supabase, newAvatarUrl);
@@ -118,9 +107,7 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
             throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update profile');
         }
 
-        // Update database with new avatar URL if uploaded
         if (newAvatarUrl) {
-            // Update using Supabase query with email filter since user.id is UUID string
             const { error: dbError } = await supabase
                 .from('Users')
                 .update({
@@ -131,14 +118,12 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
                 .is('deleted_at', null);
 
             if (dbError) {
-                // Rollback: delete newly uploaded avatar
                 const { deleteAvatar } = await import('../utils/storage.util');
                 await deleteAvatar(supabase, newAvatarUrl);
                 throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to update avatar in database');
             }
         }
 
-        // Get updated user data
         const { data: updatedUser } = await repos.users.findByEmail(req.user.email);
 
         res.status(200).json(
@@ -155,7 +140,6 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
             )
         );
     } catch (error) {
-        // Ensure rollback happens on any error
         if (newAvatarUrl && error instanceof AppError) {
             const { deleteAvatar } = await import('../utils/storage.util');
             await deleteAvatar(supabase, newAvatarUrl);
@@ -183,7 +167,6 @@ export async function changePassword(req: Request, res: Response): Promise<void>
         );
     }
 
-    // Validate new password
     if (!isValidPassword(newPassword)) {
         throw new AppError(
             400,
@@ -192,7 +175,29 @@ export async function changePassword(req: Request, res: Response): Promise<void>
         );
     }
 
-    // Update password
+    const { error: authError } = await supabase.auth.signInWithPassword({
+        email: req.user.email,
+        password: currentPassword,
+    });
+
+    if (authError) {
+        const errorMessage = authError.message;
+
+        if (errorMessage.includes('Invalid login credentials')) {
+            throw new AppError(
+                403,
+                ErrorCodes.UNAUTHORIZED,
+                'Current password is incorrect.'
+            );
+        }
+
+        throw new AppError(
+            401,
+            ErrorCodes.AUTHENTICATION_REQUIRED,
+            `Authentication failed: ${authError.message}`
+        );
+    }
+
     const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
     });
@@ -208,7 +213,6 @@ export async function changePassword(req: Request, res: Response): Promise<void>
             );
         }
 
-        // Jika error validasi lainnya dari Supabase
         throw new AppError(400, ErrorCodes.VALIDATION_ERROR, updateError.message);
     }
 
@@ -224,15 +228,7 @@ export async function deleteAccount(req: Request, res: Response): Promise<void> 
         throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'User not authenticated');
     }
 
-    // Note: Supabase doesn't support soft delete from the client SDK
-    // This would typically be handled by an admin API or database trigger
-    // For now, we'll sign out the user and mark for deletion
-
-    // Sign out user
     await supabase.auth.signOut();
-
-    // In production, you would mark the user for deletion in your database
-    // or use Supabase admin API to delete the user
 
     res.status(200).json(successResponse(null, 'Account deletion initiated'));
 }

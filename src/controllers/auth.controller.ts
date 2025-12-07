@@ -22,7 +22,6 @@ export async function register(req: Request, res: Response): Promise<void> {
 
         const { email, password, full_name, whatsapp_number } = req.body;
 
-        // Validate required fields
         if (!email || !password) {
             throw new AppError(
                 400,
@@ -30,13 +29,10 @@ export async function register(req: Request, res: Response): Promise<void> {
                 'Email and password are required'
             );
         }
-
-        // Validate email format
         if (!isValidEmail(email)) {
             throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid email format');
         }
 
-        // Validate password strength
         if (!isValidPassword(password)) {
             throw new AppError(
                 400,
@@ -45,7 +41,6 @@ export async function register(req: Request, res: Response): Promise<void> {
             );
         }
 
-        // Create user with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signUp({
             email: sanitizeString(email),
             password,
@@ -104,7 +99,6 @@ export async function register(req: Request, res: Response): Promise<void> {
 export async function login(req: Request, res: Response): Promise<void> {
     const { email, password } = req.body;
 
-    // Validate required fields
     if (!email || !password) {
         throw new AppError(
             400,
@@ -113,7 +107,6 @@ export async function login(req: Request, res: Response): Promise<void> {
         );
     }
 
-    // Authenticate with Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
         email: sanitizeString(email),
         password,
@@ -131,7 +124,6 @@ export async function login(req: Request, res: Response): Promise<void> {
         throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'Login failed');
     }
 
-    // Return user data and token
     res.status(200).json(
         successResponse(
             {
@@ -153,7 +145,6 @@ export async function login(req: Request, res: Response): Promise<void> {
  * POST /api/v1/auth/logout
  */
 export async function logout(req: Request, res: Response): Promise<void> {
-    // Extract token from header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         throw new AppError(
@@ -165,7 +156,6 @@ export async function logout(req: Request, res: Response): Promise<void> {
 
     const token = authHeader.substring(7);
 
-    // Sign out with Supabase (invalidate token)
     const { error } = await supabase.auth.signOut();
 
     if (error) {
@@ -186,7 +176,6 @@ export async function refreshToken(req: Request, res: Response): Promise<void> {
         throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Refresh token is required');
     }
 
-    // Refresh session with Supabase
     const { data, error } = await supabase.auth.refreshSession({
         refresh_token,
     });
@@ -201,4 +190,64 @@ export async function refreshToken(req: Request, res: Response): Promise<void> {
             expiresIn: data.session.expires_in,
         })
     );
+}
+
+export async function forgotPassword(req: Request, res: Response): Promise<void> {
+    const { email } = req.body;
+
+    if (!email) {
+        throw new AppError(
+            400,
+            ErrorCodes.VALIDATION_ERROR,
+            'Email is required for password recovery.'
+        );
+    }
+    
+    const redirectToUrl = 'http://localhost:5173/reset-password';
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectToUrl,
+    });
+
+    if (error) {
+        console.error('Password reset initiation error from Supabase:', error);
+    }
+
+    res.status(200).json(
+        successResponse(
+            null,
+            'If the email exists, a password recovery link has been sent.'
+        )
+    );
+}
+
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+        throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'User not authenticated with recovery session.');
+    }
+
+    const { newPassword } = req.body;
+
+    if (!newPassword || !isValidPassword(newPassword)) {
+        throw new AppError(
+            400,
+            ErrorCodes.VALIDATION_ERROR,
+            'New password is required and must meet security criteria (at least 8 characters with letters and numbers).'
+        );
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+    });
+
+    if (updateError) {
+        throw new AppError(
+            401,
+            ErrorCodes.AUTHENTICATION_REQUIRED,
+            'Failed to update password. Session token expired or invalid. Please restart the password recovery process.'
+        );
+    }
+
+    res.status(200).json(successResponse(null, 'Password has been successfully reset.'));
 }
