@@ -9,6 +9,7 @@ export interface Product {
     id: number;
     business_id: number;
     name: string;
+    base_stock: number | null;
     current_stock: number;
     purchase_price: number | null;
     selling_price: number | null;
@@ -25,6 +26,7 @@ export interface Product {
 export interface CreateProductDTO {
     business_id: number;
     name: string;
+    base_stock: number | null;
     current_stock?: number;
     purchase_price?: number;
     selling_price?: number;
@@ -37,6 +39,7 @@ export interface CreateProductDTO {
  */
 export interface UpdateProductDTO {
     name?: string;
+    base_stock: number | null;
     current_stock?: number;
     purchase_price?: number;
     selling_price?: number;

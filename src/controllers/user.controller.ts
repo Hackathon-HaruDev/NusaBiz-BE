@@ -81,6 +81,7 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
             const { url, error: uploadError } = await uploadAvatar(supabase, req.user.id, avatarFile);
 
             if (uploadError || !url) {
+                console.error('Supabase Upload Error:', uploadError); 
                 throw new AppError(500, ErrorCodes.SERVER_ERROR, 'Failed to upload avatar');
             }
 
