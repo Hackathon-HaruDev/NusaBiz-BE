@@ -21,4 +21,8 @@ router.post('/logout', asyncHandler(authController.logout));
 // POST /api/v1/auth/refresh
 router.post('/refresh', asyncHandler(authController.refreshToken));
 
+router.post('/forgot-password', asyncHandler(authController.forgotPassword));
+
+router.put('/reset-password', asyncHandler(authController.resetPassword));
+
 export default router;
