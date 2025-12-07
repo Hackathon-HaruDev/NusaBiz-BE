@@ -81,7 +81,7 @@ export class TransactionRepository extends BaseRepository<Transaction> {
         try {
             const { data, error } = await this.supabase
                 .from(this.tableName)
-                .select('*, TransactionDetails(*)')
+                .select('*, TransactionDetails(*, Products(id, name))')
                 .eq('id', transactionId)
                 .is('deleted_at', null)
                 .single();
@@ -90,13 +90,8 @@ export class TransactionRepository extends BaseRepository<Transaction> {
                 return { data: null, error };
             }
 
-            // Transform to match interface
-            const result: TransactionWithDetails = {
-                ...data,
-                details: data.TransactionDetails || [],
-            };
-
-            return { data: result, error: null };
+            // Return as-is since Supabase already uses 'TransactionDetails' field name
+            return { data: data as TransactionWithDetails, error: null };
         } catch (error) {
             return { data: null, error };
         }

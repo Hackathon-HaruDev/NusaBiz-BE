@@ -6,6 +6,13 @@
 import { BaseService } from './base.service';
 import type { Product, StockStatus } from '../models/product.model';
 
+function getStockThreshold(product: Product): number {
+    // Jika base_stock ada dan positif, gunakan base_stock. Jika tidak, gunakan default 10.
+    return (product.base_stock !== null && product.base_stock > 0) 
+           ? product.base_stock 
+           : 10;
+}
+
 export class ProductService extends BaseService {
     /**
      * Manage stock and automatically update status based on stock level
@@ -38,6 +45,8 @@ export class ProductService extends BaseService {
                     error: new Error('Insufficient stock. Cannot reduce below zero.'),
                 };
             }
+
+            const threshold = getStockThreshold(product);
 
             // Step 3: Determine new status based on stock level
             let newStatus: StockStatus;
@@ -86,6 +95,7 @@ export class ProductService extends BaseService {
             let updatedCount = 0;
 
             for (const product of products) {
+                const threshold = getStockThreshold(product);
                 let newStatus: StockStatus;
                 if (product.current_stock === 0) {
                     newStatus = 'out';

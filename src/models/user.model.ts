@@ -4,10 +4,11 @@
  */
 
 export interface User {
-    id: number;
+    id: string;
     email: string;
     full_name: string | null;
     whatsapp_number: string | null;
+    image: string | null;
     created_at: string;
     updated_at: string;
     deleted_at: string | null;
@@ -29,4 +30,5 @@ export interface UpdateUserDTO {
     email?: string;
     full_name?: string;
     whatsapp_number?: string;
+    image?: string;
 }

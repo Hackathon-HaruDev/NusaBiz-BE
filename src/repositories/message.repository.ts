@@ -65,4 +65,22 @@ export class MessageRepository extends BaseRepository<Message> {
     async countByChatId(chatId: number): Promise<{ count: number | null; error: any }> {
         return this.count({ chat_id: chatId });
     }
+
+    /**
+     * Soft deletes all messages associated with a specific chat ID.
+     */
+    async softDeleteByChatId(chatId: number): Promise<{ error: any }> {
+        try {
+            // Melakukan batch update pada kolom deleted_at
+            const { error } = await this.supabase
+                .from(this.tableName)
+                .update({ deleted_at: new Date().toISOString() })
+                .eq('chat_id', chatId) // Kunci yang digunakan adalah chat_id
+                .is('deleted_at', null);
+
+            return { error };
+        } catch (error) {
+            return { error };
+        }
+    }
 }
